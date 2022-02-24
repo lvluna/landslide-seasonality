@@ -1,0 +1,354 @@
+---
+title: "Single-Inventory and Multi-Inventory Negative Binomial and Logistic Regression Models"
+author: "Lisa Luna"
+date: "8/15/2021"
+output: html_document
+---
+
+This notebook explains and fits negative binomial and logistic regression models.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Set up: library needed packages and read the data
+
+```{r}
+# Load libraries
+library(brms) #brms version 2.16.3 was used to fit models
+library(bayesplot)
+```
+
+```{r}
+# Read the data
+
+datadir <- '../01_Data/'
+
+#these .csv files are created by the Python Jupyter Notebook "01_LandslideInventoryProcessing.ipynb"
+
+#landslide counts by month and inventory
+slidesallmi <- read.csv(paste0(datadir, 'slidesallmi.csv'))
+
+
+#convert the inventory names to a factor to be able to use them as a level in the multi-level model
+slidesallmi$inv <- as.factor(slidesallmi$inventory)
+
+#add a binary event indicator to the dataframe for logistic regression (threshold of 1 or more landslides in a month)
+
+slidesallmi$event <- ifelse(slidesallmi$counts == 0, 0, 1)
+
+```
+
+We train two variants of Bayesian regression models to learn the seasonal pattern of landslide activity at monthly resolution.  We use negative binomial regression to predict the number of landslides observed in a given month in an inventory (intensity) and logistic regression to predict the presence or absence of reported landslides (probability).  For each regression, we first fit models to data from each inventory separately (single-inventory models), and then fit a model that learns simultaneously from all inventories (multi-inventory models).
+
+# Negative Binomial
+
+## Single-Inventory Negative Binomial models
+
+Here, a separate model is fit to each inventory. We have observations of counts of landslides in individuals months (e.g. January 2002). These individual month observations are $y_i$. These individual months belong to groups - months (e.g. January 2002 belongs to the group "January").  The model learns one negative binomial distribution for each month, as well as the distribution of intercepts between months. 
+
+$$ y_{im} \sim NegativeBinomial(\mu_{m}, \phi_{m}) $$
+$$ ln(\mu_{m}) = \beta_0 + \beta_{1,m} + ln(A_{v}) $$
+$$ ln(\phi_{m}) = \gamma_{0} + \gamma_{1m} $$
+$$\beta_{1m} \sim Normal(0, \sigma_{1m}) $$
+$$\gamma_{1m} \sim Normal(0, \psi_{1m}) $$
+
+Priors: 
+$$\beta_0 \sim Studentt(3, -2.3, 2.5) $$
+$$\gamma_0 \sim Studentt(3, 0, 2.5) $$
+$$\sigma_{1m} \sim Studentt(3, 0, 2.5) $$
+$$\psi_{1m} \sim Studentt(3, 0, 2.5) $$
+where $y_{i,m}$ is the monthly count of landslides, i indicates a specific observation, and m indicates the month, $μ_m$  is the monthly mean, and $ϕ_m$ is the monthly shape parameter.  In this generalized linear model, the natural logarithms of $μ_m$ and $ϕ_m$  are obtained by adding  $β_0$ and $γ_0$, the population-level intercepts, to $β_{1,m}$ and $γ_{1,m}$, the group-level intercepts.  A is the area covered by the inventory, which scales the parameter estimates to account for varying spatial footprints between the inventories.  The model learns the distribution of the group-level intercepts, defined as normal distributions with standard deviations of $σ_{1,m}$ and $ψ_{1,m}$, which serve as an adaptive priors for each individual group-level intercept.  Priors must be defined for $β_0$ , $γ_0$, $σ_{1,m}$ , and $ψ_{1,m}$.  For all models, we use weakly informative Student’s t priors that are implemented as defaults in the R package brms.  In total, 28 parameters are learned: a population-level intercept for the mean and shape parameter (2), a group-level intercept for the mean (12) and shape (12) parameter for each month, and the standard deviations of the group-level intercepts (2).  After fitting this model to each inventory separately, we have 28 x 5 = 140 total parameters.    
+
+
+```{r}
+#Negative Binomial
+
+#separate model for each inventory, grouped by month
+
+
+fit_nasa_NB <- brm(bf(counts ~ 1 + (1|month) + offset(ln_area), #offset accounts for inventory footprint area
+                     shape ~ 1 + (1|month)),
+               data = subset(slidesallmi, inventory == 'nasa'),
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               chains = 4, cores = 4)
+
+# SLIDOh
+fit_slidoh_NB <- brm(bf(counts ~ 1 + (1|month) + offset(ln_area), 
+                     shape ~ 1 + (1|month)),
+               data = subset(slidesallmi, inventory == 'slidoh'),
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               chains = 4, cores = 4)
+
+#SLIDOd
+fit_slidod_NB <- brm(bf(counts ~ 1 + (1|month) + offset(ln_area), 
+                     shape ~ 1 + (1|month)),
+               data = subset(slidesallmi, inventory == 'slidod'),
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               chains = 4, cores = 4)
+
+#Seattle
+fit_seattle_NB <- brm(bf(counts ~ 1 + (1|month) + offset(ln_area), 
+                     shape ~ 1 + (1|month)),
+               data = subset(slidesallmi, inventory == 'seattle'),
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               control = list(max_treedepth = 15, adapt_delta = 0.99),
+               chains = 4, cores = 4)
+
+#WLC
+fit_wlc_NB <- brm(bf(counts ~ 1 + (1|month) + offset(ln_area), 
+                     shape ~ 1 + (1|month)),
+               data = subset(slidesallmi, inventory == 'wlc'),
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               control = list(adapt_delta = 0.95),
+               chains = 4, cores = 4)
+
+```
+```{r}
+#check for chain convergence (Rhat should be close to 1)
+
+
+# Rhat values - Negative Binomial Models
+plot(rhat(fit_nasa_NB)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_seattle_NB)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_slidod_NB)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_slidoh_NB)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_wlc_NB)); abline(h = 1.01, lty = 2, col = "red")
+
+
+```
+
+
+```{r}
+summary(fit_nasa_NB) 
+summary(fit_slidoh_NB)
+summary(fit_slidod_NB)
+summary(fit_seattle_NB)
+summary(fit_wlc_NB)
+
+```
+
+
+## Multi-level Negative Binomial Model 
+
+Here, a multi-level model is fit to data from all of the inventories.  The data is grouped by month and by inventory.  The model learns one group-level intercept for each month from all the inventories, one group-level intercept for each inventory, and the variation between the months and the inventories in each group.
+
+$$ y_{i,m,v} \sim NegativeBinomial(\mu_{m,v}, \phi_{m,v}) $$
+$$ ln(\mu_{m,v}) = \beta_0 + \beta_{1m} + \beta_{2v} + ln(A_v) $$
+$$ ln(\phi_{m,v}) = \gamma_{0} + \gamma_{1m} + \gamma_{2v} $$
+$$\beta_{1m} \sim Normal(0, \sigma_{1m}) $$
+$$\beta_{2v} \sim Normal(0, \sigma_{2v}) $$
+$$\gamma_{1m} \sim Normal(0, \psi_{1m}) $$
+$$\gamma_{2v} \sim Normal(0, \psi_{2v}) $$
+
+Priors: 
+$$\beta_0 \sim Studentt(3, -2.3, 2.5) $$
+$$\gamma_0 \sim Studentt(3, 0, 2.5) $$
+$$\sigma_{1m} \sim Studentt(3, 0, 2.5) $$
+$$\sigma_{2v} \sim Studentt(3, 0, 2.5) $$
+$$\psi_{1m} \sim Studentt(3, 0, 2.5) $$
+$$\psi_{2v} \sim Studentt(3, 0, 2.5) $$
+This model differs from the separate models in that we introduce two new group-level intercepts, β1v  and γ1v , which account for the variation between the different inventories indicated by v.  As with the group-level intercepts for month, the distributions of these group-level intercepts are used as adaptive priors, and are modeled as normal distributions the standard deviation ($σ_{1m}$  and $ψ_{1m}$) learned from the data.  This model has 40 parameters:  a population-level intercept for the mean and shape parameter (2), a group-level intercept for the mean (12) and shape (12) parameter for each month, a group-level intercept for the mean (5) and shape (5) parameter for each inventory, and the standard deviations of the group-level intercepts (4).
+
+```{r}
+
+#multi-level model grouped by inventory and month
+
+# Negative Binomial 
+
+fit_all_NB <- brm(bf(counts ~ 1 + (1|month) + (1|inv) + offset(ln_area), 
+                     shape ~ 1 + (1|month) + (1|inv)),
+               data = slidesallmi,
+               family = negbinomial(link = "log", link_shape = "log"),
+               warmup = 500,
+               iter = 2000,
+               control = list(adapt_delta = 0.99, max_treedepth = 15),
+               chains = 4, cores = 4)
+
+```
+
+
+```{r}
+#check for chain convergence
+
+summary(fit_all_NB) #Rhat = 1.00
+
+plot(rhat(fit_all_NB)); abline(h = 1.01, lty = 2, col = "red")
+
+mcmc_plot(fit_all_NB, 
+          type = "trace")
+          #type = 'rhat',
+          #type = 'nuts_divergence', 
+          #type = "neff")
+
+```
+
+# Logistic Regression 
+
+Besides modeling the number of landslides, we also use logistic regression to model the presence or absence of reported landslides.  Logistic regression relies on a Bernoulli distribution with parameter p expressing the probability of observing at least one landslide.  We fit the logistic regression to data that indicate whether one or more landslides were recorded in an inventory in a given month (e.g. the presence or absence of landslides in January 2002 in the Seattle inventory is one data point)
+
+## Single-inventory logistic models
+
+Here, a separate model is fit to each inventory.  Months are levels in this model, so there is one parameter estimated for each month.
+
+
+$$ z_{i,m} \sim Bernoulli(p_m) $$
+$$ logit(p_m) = \alpha_0 + \alpha_{1m} $$
+$$ \alpha_{1m} \sim N(0, \tau_{1m})$$
+
+Priors:
+$$ \alpha_0 \sim StudentT(3,0,2.5)$$
+$$ \tau_{1m} \sim StudentT(3,0,2.5)$$
+
+here $z_{i,m}$ is the presence or absence of landslides in a month, $p_m$ is the probability of recording at least one landslide in a given month, and a function of a population-level intercept $α_0$ and a group-level intercept $α_{1,m}$.  $τ_{1,m}$ is the standard deviation of the group-level intercepts.  
+
+
+```{r}
+#logistic regression 
+
+#separate model for each inventory, grouped by month
+
+#NASA GLC
+
+fit_nasa_logst <- brm(bf(event ~ 1 + (1|month)),
+                  data = subset(slidesallmi, inventory == 'nasa'),
+                  family = bernoulli(link = "logit"),
+                  warmup = 500,
+                  iter = 2000,
+                  chains = 4, cores = 4)
+# SLIDOh
+fit_slidoh_logst <- brm(bf(event ~ 1 + (1|month)),
+                   data = subset(slidesallmi, inventory == 'slidoh'),
+                   family = bernoulli(link = "logit"),
+                   warmup = 500,
+                   iter = 2000,
+                   chains = 4, cores = 4)
+
+#SLIDOd
+fit_slidod_logst <- brm(bf(event ~ 1 + (1|month)),
+                    data = subset(slidesallmi, inventory == 'slidod'),
+                    family = bernoulli(link = "logit"),
+                    warmup = 500,
+                    iter = 2000,
+                    control = list(adapt_delta = 0.95),
+                    chains = 4, cores = 4)
+
+#Seattle
+fit_seattle_logst <- brm(bf(event ~ 1 + (1|month)),
+                      data = subset(slidesallmi, inventory == 'seattle'),
+                      family = bernoulli(link = "logit"),
+                      warmup = 500,
+                      iter = 2000,
+                      chains = 4, cores = 4)
+
+#WLC
+fit_wlc_logst <- brm(bf(event ~ 1 + (1|month)),
+                 data = subset(slidesallmi, inventory == 'wlc'),
+                 family = bernoulli(link = "logit"),
+                 warmup = 500,
+                 iter = 2000,
+                 control = list(adapt_delta = 0.99),
+                 chains = 4, cores = 4)
+
+
+
+
+```
+
+
+```{r}
+#check chain convergence
+
+# Rhat values - Logistic Models
+plot(rhat(fit_nasa_logst)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_seattle_logst)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_slidod_logst)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_slidoh_logst)); abline(h = 1.01, lty = 2, col = "red")
+plot(rhat(fit_wlc_logst)); abline(h = 1.01, lty = 2, col = "red")
+
+```
+
+
+## Multi-inventory Logistic Regression
+
+Here, a multi-level model is fit to data from all of the inventories.  Both inventory and month are levels in the model, meaning that intercepts are estimated for each month and for each inventory. 
+
+$$ z_{i,m,v} \sim Bernoulli(p_{m,v}) $$
+$$ logit(p_{m,v}) = \alpha_0 + \alpha_{1m} + \alpha_{2v} $$
+$$ \alpha_{1m} \sim N(0, \tau_{1m})$$
+$$ \alpha_{2v} \sim N(0, \tau_{2v})$$
+
+Priors:
+$$ \alpha_0 \sim StudentT(3,0,2.5)$$
+$$ \tau_{1m} \sim StudentT(3,0,2.5)$$
+$$ \tau_{2v} \sim StudentT(3,0,2.5)$$
+where, similarly to the multi-inventory negative binomial model, the additional $α_{1,v}$  group-level intercept with standard deviation $τ_{1,v}$ accounts for variation between the inventories.
+
+
+```{r}
+#multi-inventory logistic regression
+
+fit_all_logst <- brm(bf(event ~ 1 + (1 | month) + (1 | inv)),
+                 data = slidesallmi,
+                 family = bernoulli(link = "logit"),
+                 warmup = 500,
+                 iter = 2000,
+                 control = list(adapt_delta = 0.95),
+                 chains = 4, cores = 4)
+
+```
+
+
+```{r}
+#check chain convergence
+
+plot(rhat(fit_all_logst)); abline(h = 1.01, lty = 2, col = "red")
+
+
+mcmc_plot(fit_all_logst, 
+          type = "trace")
+          #type = 'rhat',
+          #type = 'nuts_divergence', 
+          #type = "neff")
+
+```
+
+
+```{r}
+#Shiny STAN can be used to interactively view parameter estimates and traceplots
+#Negative Binomial Models
+
+launch_shinystan(fit_nasa_NB)
+# launch_shinystan(fit_seattle_NB)
+# launch_shinystan(fit_slidoh_NB)
+# launch_shinystan(fit_slidod_NB)
+# launch_shinystan(fit_wlc_NB)
+#launch_shinystan(fit_all_NB)
+
+```
+
+```{r}
+#Shiny STAN can be used to interactively view parameter estimates and traceplots
+#Logistic Regression
+
+launch_shinystan(fit_nasa_logst)
+# launch_shinystan(fit_seattle_logst)
+# launch_shinystan(fit_slidoh_logst)
+# launch_shinystan(fit_slidod_logst)
+# launch_shinystan(fit_wlc_logst)
+#launch_shinystan(fit_all_logst)
+
+```
+ 
