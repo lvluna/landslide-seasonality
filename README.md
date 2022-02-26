@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6299024.svg)](https://doi.org/10.5281/zenodo.6299024)
+
 # landslide-seasonality
 *Bayesian models to learn seasonal patterns of landslide activity from inventory data*
 
