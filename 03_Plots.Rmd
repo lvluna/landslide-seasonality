@@ -5,8 +5,7 @@ date: "9/22/2021"
 output: html_document
 ---
 
-This notebook produces posterior predictive distributions from all fitted
-models and creates figures 2, 3, S1, and S2
+This notebook produces posterior predictive distributions from all fitted models and creates figures 2, 3, S1, and S2
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -22,24 +21,31 @@ library(modelr)
 library(ggdist)
 library(tidybayes)
 library(ggplot2)
-library(cowplot)
 library(brms)
 library(RColorBrewer)
 library(boot)
 library(tibble)
 library(patchwork)
+library(scico)
+library(tidyr)
 
-theme_set(theme_tidybayes() + panel_border())
 
-datadir <- '../01_Data/'
-figdir <- '../03_Figures/'
+datadir <- '../03_Figures/v3/'
+figdir <- '../03_Figures/v3/'
 
 ```
 
 ```{r}
-#read monthly precipitation summaries for comparison
+#read monthly precipitation summaries for comparison 
 
 precip <- read.csv(paste0(datadir, 'footprint_precip.csv'))
+
+
+#add inventory names to slidesallmi for plotting
+plot_names <- tibble(inv = c('nasa', 'slidoh', 'slidod', 'seattle', 'wlc'), 
+                     pl_name = c("NASA GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC"))
+
+slidesallmi <- left_join(slidesallmi, plot_names, by = "inv")
 
 ```
 
@@ -51,18 +57,18 @@ Made in python.  See Jupyter Notebook.
 
 # Figure 2
 
-Posterior parameter estimates for negative binomial models and logistic models - multi-inventory results alongside single-inventory results
+Posterior parameter estimates for negative binomial models and logistic models - multi-inventory results alongside single-inventory results - and posterior predictive distributions (simulations).  All compared to 30-year normal precipitation by month.
 
 ```{r}
 
 #extract draws for each inventory from multi-inventory model
 
 nbmeanML <- fit_all_NB %>%
-
+    
           spread_draws(b_Intercept, r_month[month,], r_inv[inventory,]) %>%
-
+          
           median_hdi(month_mean = exp(b_Intercept + r_month + r_inv), .width = c(0.95)) %>%
-
+        
           mutate(Model = "Multi-inventory")
 
 
@@ -72,68 +78,71 @@ nbmeanML <- fit_all_NB %>%
 #nasa
 
 nbmeannasa <- fit_nasa_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_mean = exp(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "nasa", .after = "month") %>%
-
+  
+              mutate(inventory = "nasa", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #slidoh
 
 nbmeanslidoh <- fit_slidoh_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_mean = exp(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "slidoh", .after = "month") %>%
-
+  
+              mutate(inventory = "slidoh", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
-
+         
 #slidod
 
 nbmeanslidod <- fit_slidod_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_mean = exp(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "slidod", .after = "month") %>%
-
+  
+              mutate(inventory = "slidod", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 #seattle
 
 nbmeanseattle <- fit_seattle_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_mean = exp(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "seattle", .after = "month") %>%
-
+  
+              mutate(inventory = "seattle", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #wlc
 
 nbmeanwlc <- fit_wlc_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_mean = exp(b_Intercept + r_month), .width = c(0.95)) %>%
+  
+              mutate(inventory = "wlc", .after = "month") %>% 
+                     
+              mutate(Model = "Single-inventory") %>%
+              
+              mutate(month_mean = NA, .lower = NA, .upper = NA) #remove WLC results from analysis because 
+              #chains did not converge.  Having NAs for WLC helps ggplot later.
 
-              mutate(inventory = "wlc", .after = "month") %>%
 
-              mutate(Model = "Single-inventory")
-
-
-# combine into single dataframe
+# combine into single dataframe 
 
 nbmeandf <- bind_rows(nbmeanML, nbmeannasa, nbmeanslidoh, nbmeanslidod, nbmeanseattle, nbmeanwlc)
 
@@ -159,41 +168,43 @@ ordinv = c("NASA GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC")
 #plot posterior parameter estimates for the negative binomial mean from multi-inventory and single-inventory models for each inventory
 
 nbmean <- nbmeandf %>%
-
-
+        
+        
         ggplot(aes(x = as.factor(month), y = month_mean, ymin = .lower, ymax = .upper, color = Model, shape = Model)) +
-
-                  geom_pointinterval(position = position_dodge(width = 0.6),
-                                     point_size = 1.8,
-                                     interval_size = 1.2) +
-
+                  
+                  geom_pointinterval(position = position_dodge(width = 0.7), 
+                                     point_size = 0.8, 
+                                     interval_size = 0.7) +
+  
                   scale_color_manual(values = c("#005a32", "#999999")) +
-
-                  scale_y_log10() +
-
-                  coord_cartesian(ylim = c(10^-3, 10^3.5)) +
-
-                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 5) +
-
+                  
+                  scale_y_log10() + 
+  
+                  coord_cartesian(ylim = c(10^-3, 10^3.5)) + 
+                  
+                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 1) + 
+  
                  scale_x_discrete(breaks=as.factor((1:12)),
                                         labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-                 ggtitle("A. Intensity") +
-
-                  ylab(expression(paste("Mean landslide intensity (landslides/100,000 ", km^{2}, "/month)"))) +
-
-                  theme_minimal() +
-
-                 theme(panel.grid.minor.y = element_blank(),
-                       panel.background = element_rect(fill = NA, color = 'black'),
-                       strip.text = element_blank(),
-                       axis.title.x = element_blank(),
-                       plot.title = element_text(face = "bold", size = 13),
-                       axis.title.y = element_text(size = 10),
-                       legend.title = element_blank(),
-                       legend.position = "none")
-
-
+                 
+                 #ggtitle("A. Intensity") + 
+  
+                 # ylab(bquote("Mean landslide intensity\n (n/" (10^2 km^2) "/month)")) + 
+                 ylab(expression(atop(Mean~landslide~intensity,(n~10^5~km^{-2}~month^-1)))) + 
+   theme_bw() + 
+  
+                 theme(panel.grid.minor.y = element_blank(), 
+                          panel.grid.major.x = element_blank(),
+                          strip.text = element_text(size = 10, face = 'bold'),
+                          strip.background = element_rect(fill = "#E8E8E8", color = 'black'),
+                          axis.title.x = element_blank(),
+                           legend.position = "none", 
+                          axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+                    axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7))
+  
+              
 
 
 plot(nbmean)
@@ -209,99 +220,100 @@ the variance of a negative binomially distributed random variable is mu + (mu^2/
 #negative binomial variance estimates from multi-level model
 
 nbvarML <-   fit_all_NB %>%
-
+  
            spread_draws(b_Intercept, r_month[month,], r_inv[inventory,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,], r_inv__shape[inventory,]) %>% #to calculate phi
 
-           median_hdi(month_var = exp(b_Intercept + r_month + r_inv) +
+           median_hdi(month_var = exp(b_Intercept + r_month + r_inv) + 
                         (exp(b_Intercept + r_month + r_inv))^2/exp(b_shape_Intercept + r_month__shape + r_inv__shape),
-                      .width = c(0.95)) %>%
-
+                      .width = c(0.95)) %>% 
+                     
               mutate(Model = "Multi-inventory")
 
 
-#from separate models
+#from separate models 
 
 #nasa
 
 nbvarnasa <- fit_nasa_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,]) %>% #to calculate phi
 
-              median_hdi(month_var = exp(b_Intercept + r_month) +
+              median_hdi(month_var = exp(b_Intercept + r_month) + 
                         (exp(b_Intercept + r_month))^2/exp(b_shape_Intercept + r_month__shape),
                       .width = c(0.95))  %>%
-
-              mutate(inventory = "nasa", .after = "month") %>%
-
+  
+              mutate(inventory = "nasa", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #slidoh
 
 nbvarslidoh <- fit_slidoh_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,]) %>% #to calculate phi
 
-              median_hdi(month_var = exp(b_Intercept + r_month) +
+              median_hdi(month_var = exp(b_Intercept + r_month) + 
                         (exp(b_Intercept + r_month))^2/exp(b_shape_Intercept + r_month__shape),
                       .width = c(0.95))  %>%
-
-              mutate(inventory = "slidoh", .after = "month") %>%
-
+  
+              mutate(inventory = "slidoh", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
-
+         
 #slidod
 
 nbvarslidod <- fit_slidod_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,]) %>% #to calculate phi
 
-              median_hdi(month_var = exp(b_Intercept + r_month) +
+              median_hdi(month_var = exp(b_Intercept + r_month) + 
                         (exp(b_Intercept + r_month))^2/exp(b_shape_Intercept + r_month__shape),
                       .width = c(0.95))  %>%
-
-              mutate(inventory = "slidod", .after = "month") %>%
-
+  
+              mutate(inventory = "slidod", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 #seattle
 
 nbvarseattle <- fit_seattle_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,]) %>% #to calculate phi
 
-              median_hdi(month_var = exp(b_Intercept + r_month) +
+              median_hdi(month_var = exp(b_Intercept + r_month) + 
                         (exp(b_Intercept + r_month))^2/exp(b_shape_Intercept + r_month__shape),
                       .width = c(0.95))  %>%
-
-              mutate(inventory = "seattle", .after = "month") %>%
-
+  
+              mutate(inventory = "seattle", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #wlc
 
 nbvarwlc <- fit_wlc_NB %>%
-
+  
               spread_draws(b_Intercept, r_month[month,], #to calculate mu
                         b_shape_Intercept, r_month__shape[month,]) %>% #to calculate phi
 
-              median_hdi(month_var = exp(b_Intercept + r_month) +
+              median_hdi(month_var = exp(b_Intercept + r_month) + 
                         (exp(b_Intercept + r_month))^2/exp(b_shape_Intercept + r_month__shape),
                       .width = c(0.95))  %>%
+  
+              mutate(inventory = "wlc", .after = "month") %>% 
+                     
+              mutate(Model = "Single-inventory") %>%
+              mutate(month_var = NA, .lower = NA, .upper = NA)
 
-              mutate(inventory = "wlc", .after = "month") %>%
 
-              mutate(Model = "Single-inventory")
-
-
-# combine into single dataframe
+# combine into single dataframe 
 
 nbvardf <- bind_rows(nbvarML, nbvarnasa, nbvarslidoh, nbvarslidod, nbvarseattle, nbvarwlc)
 
@@ -323,42 +335,44 @@ nbvardf[nbvardf == "wlc"] <- "WLC"
 #plot posterior parameter estimates for the negative binomial variance from multi-level and separate models for each inventory
 
 nbvar <- nbvardf %>%
-
-
+        
+        
         ggplot(aes(x = as.factor(month), y = month_var, ymin = .lower, ymax = .upper, color = Model, shape = Model)) +
-
-                  geom_pointinterval(position = position_dodge(width = 0.6),
-                                     point_size = 1.8,
-                                     interval_size = 1.2) +
-
-                  scale_color_manual(values = c("#238b45", "#999999")) +
-
-                  scale_y_log10() +
-
-                  coord_cartesian(ylim = c(10^-3, 10^7)) +
-
-                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 5) + #, labeller = facetnames) +
-
+                  
+                  geom_pointinterval(position = position_dodge(width = 0.7), 
+                                     point_size = 0.8, 
+                                     interval_size = 0.7) +
+  
+                  scale_color_manual(values = c("#238b45", "#999999")) + 
+                  
+                  scale_y_log10() + 
+  
+                  coord_cartesian(ylim = c(10^-4, 10^8)) + 
+                    
+                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 1) + #, labeller = facetnames) + 
+  
                   scale_x_discrete(breaks=as.factor((1:12)),
                                         labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +  
-
-                  ggtitle("B. Variance") +
-
-                  ylab(expression(paste("Variance (landslides/100,000 ", km^{2}, "/month)"))) +
-
-                  theme_minimal() +
-
+          
+                  #ggtitle("B. Variance") + 
+  
+                  #ylab("Variance \n (n/10^5 km^2/month)") + 
+                  ylab(expression(atop(Variance,(n~10^5~km^{-2}~month^-1)))) +
+                  theme_bw() + 
+  
                  theme(panel.grid.minor.y = element_blank(),
-                       panel.background = element_rect(fill = NA, color = 'black'),
-                       strip.text = element_blank(),
-                       axis.title.x = element_blank(),
-                       plot.title = element_text(face = "bold", size = 13),
-                       axis.title.y = element_text(size = 10),
-                       legend.position = "none")
-
-
-
-
+              panel.grid.major.x = element_blank(),
+              strip.text = element_blank(),
+              axis.title.x = element_blank(),
+               legend.position = "none", 
+              axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+              axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7))
+  
+                
+  
+                
 
 
 plot(nbvar)
@@ -373,11 +387,11 @@ Logistic regression parameter estimates
 #extract draws for each inventory from multi-level model
 
 logstpML <- fit_all_logst %>%
-
+    
           spread_draws(b_Intercept, r_month[month,], r_inv[inventory,]) %>%
-
+  
             median_hdi(month_p = inv.logit(b_Intercept + r_month + r_inv), .width = c(0.95)) %>%
-
+        
           mutate(Model = "Multi-inventory")
 
 
@@ -387,68 +401,68 @@ logstpML <- fit_all_logst %>%
 #nasa
 
 logstpnasa <- fit_nasa_logst %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_p = inv.logit(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "nasa", .after = "month") %>%
-
+  
+              mutate(inventory = "nasa", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #slidoh
 
 logstpslidoh <- fit_slidoh_logst %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_p = inv.logit(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "slidoh", .after = "month") %>%
-
+  
+              mutate(inventory = "slidoh", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
-
+         
 #slidod
 
 logstpslidod <- fit_slidod_logst %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_p = inv.logit(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "slidod", .after = "month") %>%
-
+  
+              mutate(inventory = "slidod", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 #seattle
 
 logstpseattle <- fit_seattle_logst %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_p = inv.logit(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "seattle", .after = "month") %>%
-
+  
+              mutate(inventory = "seattle", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
 #wlc
 
 logstpwlc <- fit_wlc_logst %>%
-
+  
               spread_draws(b_Intercept, r_month[month,]) %>%
-
+  
               median_hdi(month_p = inv.logit(b_Intercept + r_month), .width = c(0.95)) %>%
-
-              mutate(inventory = "wlc", .after = "month") %>%
-
+  
+              mutate(inventory = "wlc", .after = "month") %>% 
+                     
               mutate(Model = "Single-inventory")
 
 
-# combine into single dataframe
+# combine into single dataframe 
 
 logstpdf <- bind_rows(logstpML, logstpnasa, logstpslidoh, logstpslidod, logstpseattle, logstpwlc)
 
@@ -470,50 +484,44 @@ logstpdf[logstpdf == "wlc"] <- "WLC"
 #plot posterior parameter estimates from the logistic regression from multi-inventory and single-inventory models for each inventory
 
 logstp <- logstpdf %>%
-
-
+        
+        
         ggplot(aes(x = as.factor(month), y = month_p, ymin = .lower, ymax = .upper, color = Model, shape = Model)) +
-
-                  geom_pointinterval(position = position_dodge(width = 0.6),
-                                     point_size = 1.8,
-                                     interval_size = 1.2) +
-
-                  scale_color_manual(values = c("#3f007d", "#999999")) +
-
-                 coord_cartesian(ylim = c(0, 1)) +
-
-                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 5, strip.position = "right") +
-
+                  
+                  geom_pointinterval(position = position_dodge(width = 0.7), 
+                                     point_size = 0.8, 
+                                     interval_size = 0.7) +
+  
+                  scale_color_manual(values = c("#3f007d", "#999999")) + 
+                  
+                 coord_cartesian(ylim = c(0, 1)) + 
+                    
+                  facet_wrap(~factor(inventory, levels = ordinv), nrow = 1) + 
+  
                   scale_x_discrete(breaks=as.factor((1:12)),
                                         labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +   
-
-                ggtitle("C. Probability") +
-
-                  ylab("Landslide probability") +
-
-                  theme_minimal() +
-
+  
+               # ggtitle("C. Probability") +
+  
+                  ylab("Landslide probability") + 
+      
+                  theme_bw() + 
+  
                  theme(panel.grid.minor.y = element_blank(),
-                       panel.background = element_rect(fill = NA, color = 'black'),
-                       strip.text = element_text(size = 12, face = 'bold'),
-                       strip.background = element_rect(fill = "#E8E8E8", color = 'black'),
-                       axis.title.x = element_blank(),
-                       plot.title = element_text(size = 13, face = "bold"),
-                       axis.title.y = element_text(size = 10)) +
+                        panel.grid.major.x = element_blank(),
+                        strip.text = element_blank(),
+                        axis.title.x = element_blank(),
+                         legend.position = "none", 
+                        axis.title.y = element_text(size = 8),
+                                axis.text.x = element_blank(),
+                        axis.ticks.x = element_blank(),
+                                axis.text.y = element_text(size = 7)) +
+  
+                theme(legend.position = "none") 
 
-                theme(legend.position = "none")
-
-#plot(logstp)
+plot(logstp)
 
 
-
-```
-
-```{r}
-
-fig2 <- nbmean + nbvar + logstp
-
-ggsave(paste0(figdir, "fig2.png"), plot = fig2, width = 190, height = 170, units = c("mm"), dpi = 300)
 
 ```
 
@@ -529,12 +537,12 @@ logstpdf <- arrange(logstpdf, inventory, Model, month)
 
 
 ```{r}
-#summary results table for negative binomial mu parameters
+#summary results table for negative binomial mu parameters 
 
 write.csv(nbmeandf, file = paste0(figdir, "nbmeandf.csv"))
 
 
-#summary results table for negative binomial variance
+#summary results table for negative binomial variance 
 write.csv(nbvardf, file = paste0(figdir, "nbvardf.csv"))
 
 #summary results table for logistic regression parameter
@@ -542,8 +550,6 @@ write.csv(nbvardf, file = paste0(figdir, "nbvardf.csv"))
 write.csv(logstpdf, file = paste0(figdir, "logstpdf.csv"))
 
 ```
-
-# Figure 3 - Multi-inventory posterior predictives and precipitation  
 
 Plot posterior predictive for multi-inventory negative binomial
 
@@ -558,58 +564,80 @@ invnames <- c("nasa", "slidoh", "slidod", "seattle", "wlc")
 newdata = data.frame("month" = integer(), "ln_area" = double(), "inv" = character())
 
 for (i in invnames) {
-
+  
   tempdf = subset(slidesallmi, inventory == i) %>%
           data_grid(month, ln_area, inv = i)
-
+  
   newdata = bind_rows(newdata, tempdf)
 }
 
-#posterior predictive
+#posterior predictive 
 
 negbinom_pp_MI <- newdata %>%
                   add_predicted_draws(fit_all_NB) %>%
                   mutate(inventory = inv)
 
+negbinom_pp_MI <- negbinom_pp_MI %>%
+                  mutate(countsp1 = .prediction + 1)
+
+
+negbinom_pp_MI <- left_join(negbinom_pp_MI, 
+                            plot_names, 
+                            by = "inv")
+
+
 ```
 
 
 ```{r}
-#drop the 4000 landslides point from SLIDOh to truncate the axis for visualization:
 
-ord <-c("nasa", "slidoh", "slidod", "seattle", "wlc")
+
+ordinv = c("NASA GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC")
 
 plMIppNB <-  negbinom_pp_MI %>%
-            ggplot(aes(y = .prediction, x = factor(month))) +
-              stat_interval(.width = c(.50, .80, .95, 0.99)) +
-              geom_point(data = slidesallmi[slidesallmi$counts < 4000,], aes(y = counts, x = factor(month)), size = 1, alpha = 1/2) +
+            #ungroup() %>%
+            ggplot(aes(y = countsp1, x = factor(month))) +
+              stat_interval(.width = c(.50, .80, .95, 0.99), size = 2) +
+              geom_point(data = slidesallmi, aes(y = counts + 1, x = factor(month)), size = 0.3, alpha = 1/2) +
               scale_color_brewer(palette = "Greens", direction = -1) +
-
+   
                scale_x_discrete(breaks=as.factor((1:12)),
-                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-              facet_wrap(~factor(inventory, levels = ord), nrow = 5, scale = "free_y") +
-
-                     ylab("Monthly landslides") +
-
-                    theme_minimal() +
-
-                    theme(panel.grid.minor.y = element_blank(),
+                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+              
+              facet_wrap(~factor(pl_name, levels = ordinv), nrow = 1) + 
+                      
+                     ylab("Number of \n landslides + 1") + 
+  
+                  scale_y_log10() +
+              
+                    theme_bw() + 
+              
+                    theme(panel.grid.minor.y = element_blank(), 
                           panel.grid.major.x = element_blank(),
-                          panel.background = element_rect(fill = NA, color = 'black'),
                           strip.text = element_blank(),
+                          #strip.background = element_rect(fill = "#E8E8E8", color = 'black'),
                           axis.title.x = element_blank(),
-                           axis.title.y = element_text(size = 10),
-                           legend.position = "none")
+                           legend.position = "none", 
+                          axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+                    axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7)) 
 
+ggsave(paste0(figdir, 'plMIppNB.png'), 
+       plMIppNB, 
+       width = 190, 
+       height = 40, 
+       units = c("mm"),
+       dpi = 200)
+                         
 ```
 
 
-Posterior predictive for multi-inventory logistic regression
+Posterior predictive for multi-inventory logistic regression 
 
 ```{r}
 
-#posterior predictive
+#posterior predictive 
 
 logst_pp_MI <- newdata %>%
                   add_predicted_draws(fit_all_logst)
@@ -617,33 +645,35 @@ logst_pp_MI <- newdata %>%
 #summarize (% of months where 1 or more landslides are predicted)
 
 logst_pp_MI_sum <- logst_pp_MI %>%
-
-                    group_by(inv, month) %>%
-
+      
+                    group_by(inv, month) %>% 
+              
                     summarize(ppmean = mean(.prediction)) %>%
-
+  
                     mutate(ppmean = ppmean*100) %>%
-
+    
                     mutate(event = "Landslide") %>%
-
+      
                     mutate(inventory = inv)
 
 ```
 
 ```{r}
-#summarize landslide observations for comparison with predictions
+#summarize landslide observations for comparison with predictions 
 
 #(% of months where 1 or more landslides are predicted)
 
 slidesallmi_event_sum <- slidesallmi %>%
-
-                    group_by(inventory, month) %>%
-
+      
+                    group_by(inventory, month) %>% 
+              
                     summarize(ppmean = mean(event)) %>%
-
+  
                     mutate(ppmean = ppmean*100) %>%
-
-                    mutate(event = "Landslide")
+    
+                    mutate(event = "Landslide") 
+              
+                  
 
 
 ```
@@ -651,41 +681,45 @@ slidesallmi_event_sum <- slidesallmi %>%
 
 ```{r}
 
-# Plot summary of posterior predictive for logistic regression
+ord = c('nasa', 'slidoh', 'slidod', 'seattle', 'wlc')
+
+# Plot summary of posterior predictive for logistic regression 
 
 plMIpplogst <-  logst_pp_MI_sum %>%
-
-        ggplot(aes(y=ppmean, x=as.factor(month))) +
-
-        geom_bar(stat = "identity", fill = "#6a51a3") +
-
-        geom_point(data = slidesallmi_event_sum,
-                   mapping = aes(x = as.factor(month), y = ppmean),
-                   size = 1.5,
-                   shape = 18,
-                   color = "black",
-                   fill = "black") +
-
+      
+        ggplot(aes(y=ppmean, x=as.factor(month))) + 
+        
+        geom_bar(stat = "identity", fill = "#6a51a3", size = 2) + 
+  
+        geom_point(data = slidesallmi_event_sum, 
+                   mapping = aes(x = as.factor(month), y = ppmean), 
+                   size = 1, 
+                   shape = 18, 
+                   color = "black", 
+                   fill = "black") + 
+  
          scale_x_discrete(breaks=as.factor((1:12)),
-                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-        coord_cartesian(ylim = c(0,100)) +
-
-        facet_wrap(~factor(inventory, levels = ord), nrow = 5) +
-
-        ylab("% of months with one or more landslides") +
-
-               theme_minimal() +
-
+                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+  
+        coord_cartesian(ylim = c(0,100)) + 
+      
+        facet_wrap(~factor(inventory, levels = ord), nrow = 1) + 
+  
+        ylab("% of years with \n landslides") +
+  
+               theme_bw() + 
+  
         theme(panel.grid.minor.y = element_blank(),
               panel.grid.major.x = element_blank(),
-              panel.background = element_rect(fill = NA, color = 'black'),
               strip.text = element_blank(),
               axis.title.x = element_blank(),
-              axis.title.y = element_text(size = 10),
-               legend.position = "none")
-
-
+               legend.position = "none", 
+              axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+              axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7)) 
+             
+plMIpplogst
 ```
 
 Plot mean monthly precipitation over the footprint areas covered by the landslide inventories
@@ -699,29 +733,30 @@ precip[precip == "wlc"] <- "WLC"
 
 
 pl_precip <-  precip %>%
-
+  
             ggplot(aes(x = as.factor(month), y = mean)) +
 
-            geom_bar(stat = "identity", fill = '#08519c', width = 0.2) +
-
-
+            geom_bar(stat = "identity", fill = '#08519c', width = 0.35) + 
+            
+  
          scale_x_discrete(breaks=as.factor((1:12)),
-                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-        facet_wrap(~factor(inventory, levels = ordinv), nrow = 5, strip.position = "right") +
-
-        ylab("Mean monthly precipitation (mm)") +
-
-        theme_minimal() +
-
-        theme(panel.grid.minor.y = element_blank(),
+                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+      
+        facet_wrap(~factor(inventory, levels = ordinv), nrow = 1) + 
+  
+        ylab("30-year normal \n precipitation (mm/month)") + 
+  
+        theme_bw() + 
+  
+        theme(panel.grid.minor.y = element_blank(), 
               panel.grid.major.x = element_blank(),
-              panel.background = element_rect(fill = NA, color = 'black'),
-              strip.text = element_text(size = 12, face = 'bold'),
-              strip.background = element_rect(fill = "#E8E8E8", color = 'black'),
+              #panel.background = element_rect(fill = NA, color = 'black'),
+              strip.text = element_blank(), 
               axis.title.x = element_blank(),
-               axis.title.y = element_text(size = 10),
-               legend.position = "none")
+               legend.position = "none", 
+              axis.title.y = element_text(size = 8),
+                      axis.text.x = element_text(size = 6),
+                      axis.text.y = element_text(size = 7))
 
 ```
 
@@ -729,21 +764,29 @@ pl_precip <-  precip %>%
 
 ```{r}
 
-fig3 <- plMIppNB |  plMIpplogst | pl_precip
+# fig3 <- plMIppNB |  plMIpplogst | pl_precip
+# 
+# fig3 <- fig3 + plot_annotation(tag_levels = c("A"))
 
-fig3 <- fig3 + plot_annotation(tag_levels = c("A"))
+fig2 <-  nbmean / nbvar / plMIppNB / logstp /  plMIpplogst / pl_precip
+
+fig2 <- fig2 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(size = 10, face = 'bold'))
+
+
 
 ```
-
 
 
 ```{r}
-ggsave(paste0(figdir, "fig3.png"), plot = fig3, width = 190, height = 170, units = c("mm"), dpi = 300)
+#ggsave(paste0(figdir, "fig3.png"), plot = fig3, width = 190, height = 170, units = c("mm"), dpi = 300)
+
+#ggsave(paste0(figdir, "fig2.png"), plot = fig2, width = 150, height = 110, units = c("mm"), dpi = 300)
+
+ggsave(paste0(figdir, "fig2.pdf"), plot = fig2, width = 150, height = 210, units = c("mm"))
 
 ```
 
-
-Figure S1 - group level standard deviations
+Figure S1 - group level standard deviations 
 
 ```{r}
 
@@ -752,29 +795,29 @@ Figure S1 - group level standard deviations
 #"sd_inv__Intercept"   "sd_month__Intercept"    
 
  a <- fit_all_NB %>%
-
+    
           spread_draws(sd_inv__Intercept) %>%
-
+  
           rename(value = sd_inv__Intercept) %>%
-
-        mutate(group = "inventory") %>%
-
+  
+        mutate(group = "inventory") %>% 
+  
         mutate(param = "sigma")
 
 b <- fit_all_NB %>%
-
+    
           spread_draws(sd_month__Intercept) %>%
-
+  
          rename(value = sd_month__Intercept) %>%
-
-        mutate(group = "month") %>%
-
+  
+        mutate(group = "month") %>% 
+  
         mutate(param = "sigma")
 
 sigma <- bind_rows(a, b)
 
 rm(a,b)
-
+       
 
 #negative binomial phi -  month (psi1m) and inventory (psi2v)
 
@@ -782,23 +825,23 @@ rm(a,b)
 #"sd_inv__shape_Intercept"     "sd_month__shape_Intercept"
 
 c <- fit_all_NB %>%
-
+    
           spread_draws(sd_inv__shape_Intercept) %>%
-
+  
           rename(value = sd_inv__shape_Intercept) %>%
-
-        mutate(group = "inventory") %>%
-
+  
+        mutate(group = "inventory") %>% 
+  
         mutate(param = "psi")
 
 d <- fit_all_NB %>%
-
+    
           spread_draws(sd_month__shape_Intercept) %>%
-
+  
          rename(value = sd_month__shape_Intercept) %>%
-
-        mutate(group = "month") %>%
-
+  
+        mutate(group = "month") %>% 
+  
         mutate(param = "psi")
 
 psi <- bind_rows(c, d)
@@ -808,24 +851,24 @@ rm(c,d)
 # logistic p - month (tau1m) and inventory (tau2v)
 
 e <- fit_all_logst %>%
-
+    
           spread_draws(sd_inv__Intercept) %>%
-
+  
           rename(value = sd_inv__Intercept) %>%
-
-        mutate(group = "inventory") %>%
-
+  
+        mutate(group = "inventory") %>% 
+  
         mutate(param = "tau")
 
 
 f <- fit_all_logst %>%
-
+    
           spread_draws(sd_month__Intercept) %>%
-
+  
           rename(value = sd_month__Intercept) %>%
-
-        mutate(group = "month") %>%
-
+  
+        mutate(group = "month") %>% 
+  
         mutate(param = "tau")
 
 
@@ -841,22 +884,23 @@ group_level_sd <- bind_rows (sigma, psi, tau)
 ```{r}
 
 figS1 <-  group_level_sd %>%
-
-          ggplot(aes(x = value, y = group)) +
-
-          stat_halfeye(point_interval = median_hdi, .width = c(0.95))  +
-
-          facet_wrap(~factor(param, levels = c("sigma", "psi", "tau")), labeller = label_parsed) +
-
-           xlab("Parameter estimate") +
-
-           ylab(element_blank()) +
-
-                xlim(c(0,7))
+        
+          ggplot(aes(x = value, y = group)) + 
+               
+          stat_halfeye(point_interval = median_hdi, .width = c(0.95))  + 
+        
+          facet_wrap(~factor(param, levels = c("sigma", "psi", "tau")), labeller = label_parsed) + 
+        
+           xlab("Parameter estimate") + 
+        
+           ylab(element_blank()) + 
+        
+                xlim(c(0,7)) + 
+          theme_bw()
 
 
 ggsave(paste0(figdir, "figS1.png"), plot = figS1, width = 190, height = 90, units = c("mm"), dpi = 300)
-
+  
 
 ```
 
@@ -869,67 +913,82 @@ Plot posterior predictive for single-inventory negative binomial
 
 #posterior predictive from single-inventory model for each inventory
 
-invnames <- c("nasa", "slidoh", "slidod", "seattle", "wlc")
+invnames <- c("nasa", "slidoh", "slidod", "seattle")#, "wlc")
 
-fits_SINB <- list(fit_nasa_NB, fit_slidoh_NB, fit_slidod_NB, fit_seattle_NB, fit_wlc_NB)
+fits_SINB <- list(fit_nasa_NB, fit_slidoh_NB, fit_slidod_NB, fit_seattle_NB)#, fit_wlc_NB)
 
-#loop through single inventory model fits
+#loop through single inventory model fits 
 
-for (i in 1:5) {
-
+for (i in 1:4) {
+  
   tempdf = subset(slidesallmi, inventory == invnames[i]) %>%
           data_grid(month, ln_area, inv = invnames[i])
-
+  
   tempdf <- tempdf %>% add_predicted_draws(fits_SINB[[i]])
-
+  
   if (i == 1) {
-
+    
     negbinom_pp_SI <- tempdf
-
+    
   } else {
-
+    
     negbinom_pp_SI <- bind_rows(negbinom_pp_SI, tempdf)
-
+    
   }
 }
 
-negbinom_pp_SI <- negbinom_pp_SI %>% rename(inventory = inv)
+#negbinom_pp_SI <- negbinom_pp_SI %>% rename(inventory = inv)
+
+negbinom_pp_SI <- negbinom_pp_SI %>%
+                  mutate(countsp1 = .prediction + 1)
+
+
+negbinom_pp_SI <- left_join(negbinom_pp_SI, 
+                            plot_names, 
+                            by = "inv")
+
+
+
 
 ```
 
 
 ```{r}
-#drop the 4000 landslides point from SLIDOh to truncate the axis for visualization:
 
 ord <-c("nasa", "slidoh", "slidod", "seattle", "wlc")
 
 plSIppNB <-  negbinom_pp_SI %>%
-            ggplot(aes(y = .prediction, x = factor(month))) +
-              stat_interval(.width = c(.50, .80, .95, 0.99)) +
-              geom_point(data = slidesallmi[slidesallmi$counts < 4000,], aes(y = counts, x = factor(month)), size = 1, alpha = 1/3) +
+             ggplot(aes(y = countsp1, x = factor(month))) +
+              stat_interval(.width = c(.50, .80, .95, 0.99), size = 2) +
+              geom_point(data = slidesallmi, aes(y = counts + 1, x = factor(month)), size = 0.3, alpha = 1/2) +
               scale_color_brewer(palette = "Greens", direction = -1) +
-
+   
                scale_x_discrete(breaks=as.factor((1:12)),
-                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-              facet_wrap(~factor(inventory, levels = ord), nrow = 5, scale = "free_y") +
-
-                     ylab("Monthly landslides") +
-
-                    theme_minimal() +
-
-                    theme(panel.grid.minor.y = element_blank(),
+                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+              
+              facet_wrap(~factor(pl_name, levels = ordinv), nrow = 1) + 
+                      
+                     ylab("Number of \n landslides + 1") + 
+  
+                  scale_y_log10() +
+              
+                    theme_bw() + 
+              
+                    theme(panel.grid.minor.y = element_blank(), 
                           panel.grid.major.x = element_blank(),
-                          panel.background = element_rect(fill = NA, color = 'black'),
-                          strip.text = element_blank(),
+                          strip.text = element_text(size = 10, face = 'bold'),
+                          strip.background = element_rect(fill = "#E8E8E8", color = 'black'),
                           axis.title.x = element_blank(),
-                          axis.title.y = element_text(size = 10),
-                          legend.position = "none")
-
+                           legend.position = "none", 
+                          axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+                    axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7)) 
+                         
 ```
 
 
-Plot posterior predictive for single-inventory logistic
+Plot posterior predictive for single-inventory logistic 
 
 ```{r}
 
@@ -940,38 +999,38 @@ invnames <- c("nasa", "slidoh", "slidod", "seattle", "wlc")
 
 fits_SIlogst <- list(fit_nasa_logst, fit_slidoh_logst, fit_slidod_logst, fit_seattle_logst, fit_wlc_logst)
 
-#loop through single inventory model fits
+#loop through single inventory model fits 
 
 for (i in 1:5) {
-
+  
   tempdf = subset(slidesallmi, inventory == invnames[i]) %>%
           data_grid(month, ln_area, inv = invnames[i])
-
+  
   tempdf <- tempdf %>% add_predicted_draws(fits_SIlogst[[i]])
-
+  
   if (i == 1) {
-
+    
     logst_pp_SI <- tempdf
-
+    
   } else {
-
+    
     logst_pp_SI <- bind_rows(logst_pp_SI, tempdf)
-
+    
   }
 }
 
 #summarize (% of months where 1 or more landslides are predicted)
 
 logst_pp_SI_sum <- logst_pp_SI %>%
-
-                    group_by(inv, month) %>%
-
+      
+                    group_by(inv, month) %>% 
+              
                     summarize(ppmean = mean(.prediction)) %>%
-
+  
                     mutate(ppmean = ppmean*100) %>%
-
+    
                     mutate(event = "Landslide") %>%
-
+      
                     rename(inventory = inv)
 
 
@@ -980,55 +1039,538 @@ logst_pp_SI_sum <- logst_pp_SI %>%
 
 ```{r}
 
-# Plot summary of posterior predictive for logistic regression
+# Plot summary of posterior predictive for logistic regression 
 
 plSIpplogst <-  logst_pp_SI_sum %>%
-
-        ggplot(aes(y=ppmean, x=as.factor(month))) +
-
-        geom_bar(stat = "identity", fill = "#6a51a3") +
-
-        geom_point(data = slidesallmi_event_sum,
-                         mapping = aes(x = as.factor(month), y = ppmean),
-                         size = 1.5,
-                         shape = 18,
-                         color = "black",
-                         fill = "black") +
-
+      
+        ggplot(aes(y=ppmean, x=as.factor(month))) + 
+        
+        geom_bar(stat = "identity", fill = "#6a51a3") + 
+      
+        geom_point(data = slidesallmi_event_sum, 
+                         mapping = aes(x = as.factor(month), y = ppmean), 
+                         size = 1.5, 
+                         shape = 18, 
+                         color = "black", 
+                         fill = "black") + 
+  
          scale_x_discrete(breaks=as.factor((1:12)),
-                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) +
-
-        coord_cartesian(ylim = c(0,100)) +
-
-        facet_wrap(~factor(inventory, levels = ord), nrow = 5) +
-
-        ylab("% of months with one or more landslides") +
-
-               theme_minimal() +
-
+                                labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+  
+        coord_cartesian(ylim = c(0,100)) + 
+      
+        facet_wrap(~factor(inventory, levels = ord), ncol = 5) + 
+  
+        ylab("% of months with \n one or more landslides") +
+  
+               theme_bw() + 
+  
         theme(panel.grid.minor.y = element_blank(),
               panel.grid.major.x = element_blank(),
-              panel.background = element_rect(fill = NA, color = 'black'),
               strip.text = element_blank(),
               axis.title.x = element_blank(),
-              axis.title.y = element_text(size = 10),
-              legend.position = "none")
-
+               legend.position = "none", 
+              axis.title.y = element_text(size = 8),
+                      axis.text.x = element_blank(),
+              axis.ticks.x = element_blank(),
+                      axis.text.y = element_text(size = 7)) 
+             
 
 ```
 
 
 ```{r}
 
-figS2 <- plSIppNB |  plSIpplogst | pl_precip
+figS2 <- plSIppNB /  plSIpplogst / pl_precip
 
-figS2 <- figS2 + plot_annotation(tag_levels = c("A"))
+figS2 <- figS2 + plot_annotation(tag_levels = c("a"))
 
 ```
 
 
 
 ```{r}
-ggsave(paste0(figdir, "figS2.png"), plot = figS2, width = 190, height = 170, units = c("mm"), dpi = 300)
+ggsave(paste0(figdir, "figS2.pdf"), plot = figS2, width = 150, height = 110, units = c("mm"), dpi = 300)
 
 ```
+
+Landslide-precipitation models 
+
+EXPECTATION - Logistic Regression and NB Regression
+
+Get epred for each group. 
+
+```{r}
+areas <- slidesallmi_mrain.scale %>%
+         select(inv, ln_area) %>%
+         distinct(.keep_all = TRUE)
+         
+
+newdata <- expand_grid(mean_rain_sp = seq(from = min(slidesallmi_mrain.scale$mean_rain_sp), 
+                                          to = max(slidesallmi_mrain.scale$mean_rain_sp), length.out = 50),
+                       month = seq(from = 1, to = 12, by = 1), 
+                       inv = unique(slidesallmi_mrain.scale$inv))
+
+newdata <- left_join(newdata, areas, by = "inv")
+
+epred.logst.rain.all <- newdata%>%
+                          add_epred_draws(fit.logst.rain.all ,
+                                          ndraws = 500) %>%
+                          mutate(mean_rain_sp_unz = mean_rain_sp*slidesallmi_mrain.sd + 
+                                   slidesallmi_mrain.mean)
+
+epred.NB.rain.all <- newdata%>%
+                          add_epred_draws(fit.NB.rain.all ,
+                                          ndraws = 500) %>%
+                          mutate(mean_rain_sp_unz = mean_rain_sp*slidesallmi_mrain.sd + 
+                                   slidesallmi_mrain.mean) %>% 
+                          mutate(countsp1 = .epred + 1)
+
+
+
+```
+
+POSTERIOR PARAMETER ESTIMATES - Logistic Regression and NB regression 
+
+Get posterior parameter estimates for each group for logistic and NB regression 
+
+POSTERIOR - LOGISTIC
+
+```{r}
+
+get_variables(fit.logst.rain.all)
+
+
+post.logst.rain.all <- fit.logst.rain.all %>%
+    
+                        spread_draws(b_Intercept, b_mean_rain_sp, r_month[month,param], r_inv[inv, param], ndraws = 500) 
+
+post.logst.rain.all.I <- post.logst.rain.all %>%
+                          filter(param == "Intercept") %>%
+                          mutate(post_est = b_Intercept + r_month + r_inv) %>%
+                          #mutate(param_name = 'Intercept')
+                          mutate(param_name = 'alpha[0]')
+
+post.logst.rain.all.S <- post.logst.rain.all %>%
+                          filter(param == "mean_rain_sp") %>%
+                          mutate(post_est = b_mean_rain_sp + r_month + r_inv) %>%
+                          mutate(param_name = 'alpha[1]')
+
+
+post.logst.rain.all <- bind_rows(post.logst.rain.all.I, post.logst.rain.all.S)
+rm(post.logst.rain.all.I, post.logst.rain.all.S)
+
+```
+
+POSTERIOR - NB
+
+```{r}
+
+get_variables(fit.NB.rain.all)
+
+#b_Intercept, r_month
+
+post.NB.rain.all <- fit.NB.rain.all %>%
+    
+                        spread_draws(b_Intercept, 
+                                     b_mean_rain_sp, 
+                                     r_month[month,param],
+                                     r_inv[inv, param],
+                                     b_shape_Intercept,
+                                     r_month__shape[month,],
+                                     r_inv__shape[inv,],
+                                     ndraws = 500) 
+
+post.NB.rain.all.I <- post.NB.rain.all %>%
+                          filter(param == "Intercept") %>%
+                          mutate(post_est = b_Intercept + r_month + r_inv) %>%
+                          mutate(param_name = "beta[0]")
+
+post.NB.rain.all.S <- post.NB.rain.all %>%
+                          filter(param == "mean_rain_sp") %>%
+                          mutate(post_est = b_mean_rain_sp + r_month + r_inv) %>%
+                          mutate(param_name = "beta[1]")
+
+post.NB.rain.all.shape <- post.NB.rain.all %>%
+                          filter(param == "Intercept") %>%
+                          mutate(post_est = b_shape_Intercept + r_month__shape + r_inv__shape) %>%
+                          mutate(param = 'shape') %>%
+                          mutate(param_name = "phi[m,v]")
+
+
+post.NB.rain.all <- bind_rows(post.NB.rain.all.I, post.NB.rain.all.S, post.NB.rain.all.shape)
+rm(post.NB.rain.all.I, post.NB.rain.all.S, post.NB.rain.all.shape)
+
+
+```
+
+
+NEGATIVE BINOMIAL FIGURES
+
+clean up original data for plotting
+
+```{r}
+
+plot_names <- tibble(inv = c('nasa', 'slidoh', 'slidod', 'seattle', 'wlc'), 
+                     pl_name = c("NASA GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC"))
+
+#add counts + 1 to be able to log-transform the y axis
+slidesallmi_mrain_pl <- slidesallmi_mrain %>% 
+                        mutate(countsp1 = counts + 1)
+
+#add names for plotting to raw data, epred, and posterior parameter estimates
+slidesallmi_mrain_pl <- left_join(slidesallmi_mrain_pl, 
+                                  plot_names, 
+                                  by = "inv") 
+
+epred.logst.rain.all <- left_join(epred.logst.rain.all, plot_names, by = "inv")
+epred.NB.rain.all <- left_join(epred.NB.rain.all, plot_names, by = "inv")
+
+post.logst.rain.all <- left_join(post.logst.rain.all, plot_names, by = "inv")
+post.NB.rain.all <- left_join(post.NB.rain.all, plot_names, by = "inv")
+
+pl_math_names <- tibble(inv = c('nasa', 'slidoh', 'slidod', 'seattle', 'wlc'), 
+                     pl_math_name = c("NASA~GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC"))
+
+post.logst.rain.all <- left_join(post.logst.rain.all, pl_math_names, by = "inv")
+post.NB.rain.all <- left_join(post.NB.rain.all, pl_math_names, by = "inv")
+
+
+ordinv = c("NASA GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC")
+ordinv_math = c("NASA~GLC", "SLIDOh", "SLIDOd", "Seattle", "WLC")
+
+season_cmap <- c("1" = "#599FC5",
+                 "2" = "#85C6CE",
+                 "3" = "#B8DFC3",
+                 "4" = "#D4DA99",
+                 "5" = "#CCB35D",
+                 "6" = "#B18033",
+                 "7" = "#97552C",
+                 "8" = "#843D3A",
+                 "9" = "#723957",
+                 "10" = "#723959",
+                 "11" = "#5F4C81", 
+                 "12" = "#4E73AB")
+
+
+```
+
+FIGURE 3
+
+Panel A - raw data counts vs. mean monthly rainfall over the inventory area
+
+```{r}
+plot.count.rain <-ggplot() +
+  
+                geom_point(data = slidesallmi_mrain_pl %>% filter(month != 11 & month != 2),
+                            aes(x = mean_rain_sp,
+                             y = countsp1,
+                             color = as.character(month)),
+                             pch = 21, stroke = 0.5, size = 0.7, alpha = 0.7) +
+
+                geom_point(data = slidesallmi_mrain_pl %>% filter(month == 11),
+                            aes(x = mean_rain_sp,
+                             y = countsp1,
+                             color = as.character(month)),
+                             pch = 22, stroke = 0.7, size = 0.7) +
+  
+                geom_point(data = slidesallmi_mrain_pl %>% filter(month == 2),
+                            aes(x = mean_rain_sp,
+                             y = countsp1,
+                             color = as.character(month)),
+                             pch = 23, stroke = 0.7, size = 0.7) +
+  
+                scale_color_manual(labels = month.abb, values = season_cmap) +
+                ylab('Number of \n landslides + 1') +
+                scale_y_log10() +
+                facet_wrap(~factor(pl_name, levels = ordinv), nrow = 1, ncol = 5) +
+                theme_bw() + 
+                theme(axis.title.x = element_blank(),
+                      axis.title.y = element_text(size = 8),
+                      axis.text.x = element_text(size = 7),
+                      axis.text.y = element_text(size = 7),
+                      legend.position = "None", 
+                      strip.text = element_text(size = 10, face = 'bold'),
+                      strip.background = element_rect(fill = "#E8E8E8", color = 'black'))
+
+# ggsave(paste0(figdir, 'plot_count_rain.png'), 
+#        plot.count.rain, 
+#        width = 190, 
+#        height = 30,  
+#        units = c('mm'), 
+#        dpi = 300)
+
+
+legend_data <- tibble(month = seq(1,12), labels = c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"))
+
+plot.count.rain.legend <- ggplot() +
+                             geom_point(data = legend_data %>% filter(month != 11 & month != 2),
+                            aes(x = month,
+                             y = 1,
+                             color = as.character(month)),
+                             pch = 21, stroke = 1, size = 1.2, alpha = 0.7) +
+
+                geom_point(data = legend_data %>% filter(month == 11),
+                            aes(x = month,
+                             y = 1,
+                             color = as.character(month)),
+                             pch = 22, stroke = 1.2, size = 1.2) +
+  
+                geom_point(data = legend_data %>% filter(month == 2),
+                            aes(x = month,
+                             y = 1,
+                             color = as.character(month)),
+                             pch = 23, stroke = 1, size = 1.2) +
+  
+                # scale_y_discrete(labels=c("0" = "F", "1" = "T"))+
+                scale_color_manual(values = season_cmap) +
+                          geom_text(data = legend_data, aes(x = month, y = 1.05, label = labels)) +
+                          theme_bw() +
+                          theme(legend.position = "None",
+                                axis.title.x = element_blank(),
+                                axis.title.y = element_blank(),
+                                axis.text = element_blank(),
+                                panel.grid.major = element_blank(),
+                                panel.grid.minor = element_blank(),
+                                panel.border = element_blank(),
+                                axis.ticks = element_blank())
+
+
+
+
+ggsave(paste0(figdir, 'plot_count_rain_legend.pdf'),
+       plot.count.rain.legend,
+       width = 100,
+       height = 30,
+       units = c('mm'),
+       dpi = 300)
+
+
+
+```
+
+Panel B - NEGATIVE BINOMIAL POSTERIOR EXPECTATION FOR NOVEMBER AND FEBRUARY
+
+```{r}
+#plot lNEGATIVE BINOMIAL results - november and february
+
+plot.epred.NB.rain.nov.feb.all <- ggplot() + 
+                        
+                         stat_lineribbon(data = epred.NB.rain.all %>% filter(month == 11), 
+                                         aes(x = mean_rain_sp_unz, 
+                                             y=countsp1), 
+                                         point_interval = median_qi, 
+                                          .width = c(0.95), size = 0.5, 
+                                         color = "black", fill = "#5F4C81", alpha =0.5) +
+                          
+                        stat_lineribbon(data = epred.NB.rain.all %>% filter(month == 2), 
+                                         aes(x = mean_rain_sp_unz, 
+                                             y=countsp1), 
+                                         point_interval = median_qi, 
+                                          .width = c(0.95), size = 0.5, 
+                                         color = "black", fill = "#85C6CE", alpha =0.5) +
+                        
+                          geom_point(data = slidesallmi_mrain_pl %>% 
+                                       filter(month == 11),
+                            aes(x = mean_rain_sp, 
+                             y = countsp1),
+                             color = "#5F4C81",
+                             pch = 22, stroke = 0.7, size = 0.7, alpha = 0.7) +  
+                geom_point(data = slidesallmi_mrain_pl %>% 
+                                       filter(month == 2),
+                            aes(x = mean_rain_sp, 
+                             y = countsp1),
+                             color = "#85C6CE",
+                             pch = 23, stroke = 0.7, size = 0.7) +  
+                facet_wrap(~factor(pl_name, levels = ordinv), nrow = 1) + 
+                coord_cartesian(ylim = c(1,4000)) + 
+               # scale_y_continuous(name = 'Average number \n of landslides + 1', labels = scales::math_format(10^.x)) +
+                scale_y_log10() + 
+                ylab('Mean number \n of landslides + 1') + 
+                theme_bw() + 
+                theme(axis.title.x = element_blank(),
+                      axis.title.y = element_text(size = 8),
+                      axis.text.x = element_text(size = 7),
+                      axis.text.y = element_text(size = 7),
+                       legend.position = "none", 
+                      strip.text = element_blank())
+
+
+# ggsave(paste0(figdir, 'plot_epred_NB_rain_nov_feb_all.png'), 
+#        plot.epred.NB.rain.nov.feb.all, 
+#        width = 190, 
+#        height = 30, 
+#        units = c('mm'), 
+#        dpi = 300)
+
+```
+
+Panel C - LOGISTIC REGRESSION POSTERIOR EXPECTATION FOR NOVEMBER AND FEBRUARY
+
+```{r}
+#plot logistic regression results - november and february
+
+plot.epred.logst.rain.nov.feb.all <- ggplot() + 
+                        
+                         stat_lineribbon(data = epred.logst.rain.all %>% filter(month == 11), 
+                                         aes(x = mean_rain_sp_unz, 
+                                             y=.epred), 
+                                         point_interval = median_qi, 
+                                          .width = c(0.95), size = 0.5, 
+                                         color = "black", fill = "#5F4C81", alpha =0.5) +
+                          
+                        stat_lineribbon(data = epred.logst.rain.all %>% filter(month == 2), 
+                                         aes(x = mean_rain_sp_unz, 
+                                             y=.epred), 
+                                         point_interval = median_qi, 
+                                          .width = c(0.95), size = 0.5, 
+                                         color = "black", fill = "#85C6CE", alpha =0.5) +
+                        
+                          geom_point(data = slidesallmi_mrain_pl %>% 
+                                       filter(month == 11),
+                            aes(x = mean_rain_sp, 
+                             y = event),
+                             color = "#5F4C81",
+                             pch = 22, stroke = 0.7, size = 0.7, alpha = 0.7) +  
+                geom_point(data = slidesallmi_mrain_pl %>% 
+                                       filter(month == 2),
+                            aes(x = mean_rain_sp, 
+                             y = event),
+                             color = "#85C6CE",
+                             pch = 23, stroke = 0.7, size = 0.7) +  
+                facet_wrap(~factor(pl_name, levels = ordinv), nrow = 1) + 
+                #coord_cartesian(ylim = c(0,log10(max(slidesallmi_mrain_pl %>% select(countsp1)) + 10))) + 
+                #scale_y_continuous(name = 'Landslide Probability', labels = scales::math_format(10^.x)) +
+                xlab('Average precipitation across inventory area (mm/month)') +
+                ylab('Landslide \n probability') + 
+                theme_bw() + 
+                theme(axis.title.x = element_text(size = 8),
+                      axis.title.y = element_text(size = 8),
+                      axis.text.x = element_text(size = 7),
+                      axis.text.y = element_text(size = 7),
+                       legend.position = "none", 
+                      strip.text = element_blank())
+                
+
+
+# ggsave(paste0(figdir, 'plot_epred_logst_rain_nov_feb_all.png'), 
+#        plot.epred.logst.rain.nov.feb.all, 
+#        width = 190, 
+#        height = 30, 
+#        units = c('mm'), 
+#        dpi = 300)
+
+```
+
+All together now
+
+```{r}
+figure3 <- plot.count.rain / plot.epred.NB.rain.nov.feb.all / plot.epred.logst.rain.nov.feb.all
+
+figure3 <- figure3 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(size = 10, face = 'bold'))
+
+ggsave(paste0(figdir, 'figure3.png'), 
+       figure3, 
+       width = 190, 
+       height = 110, 
+       units = c('mm'), 
+       dpi = 300)
+
+ggsave(paste0(figdir, 'figure3.pdf'), 
+       figure3, 
+       width = 190, 
+       height = 130, 
+       units = c('mm'), 
+       dpi = 300)
+
+```
+Figure S3
+
+```{r}
+
+plot.post.NB.rain.all <-  ggplot(post.NB.rain.all, 
+                                     aes(y = post_est, 
+                                         x = as.factor(month), 
+                                         color = as.character(month))) +  
+                            stat_pointinterval(.width = c(0.95),
+                                        # shape = 21,
+                                         interval_size = 0.8, 
+                                         #point_color = , 
+                                         point_size = 0.4, 
+                                         position = position_dodge(width = 0.5)) +
+                            scale_x_discrete(breaks=as.factor(c(1:12)),
+                                        labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+                            facet_grid(cols = vars(factor(pl_math_name, levels = ordinv_math)),
+                                      rows = vars(factor(param_name)), 
+                                      labeller = label_parsed, 
+                                      scales = "free_y") + 
+                            scale_color_manual(labels = month.abb, values = season_cmap) + 
+                            ylab("Posterior parameter estimate") + 
+                            theme_bw() + 
+                            theme(#legend.position = 'none',
+                                  legend.title = element_blank(),
+                                  #axis.title.x = element_blank(),
+                                  axis.title.y = element_text(size = 8),
+                                  axis.title.x = element_blank(),
+                                  axis.text.x = element_text(size = 7), 
+                                  axis.text.y = element_text(size = 7))
+
+
+ggsave(paste0(figdir, 'plot_post_NB_rain_all.pdf'), 
+       plot.post.NB.rain.all, 
+       width = 190, 
+       height = 120, 
+       units = c('mm'), 
+       dpi = 300)
+
+
+```
+
+
+
+
+Figure S4
+
+```{r}
+
+plot.post.logst.rain.all <-  ggplot(post.logst.rain.all, 
+                                     aes(y = post_est, 
+                                         x = as.factor(month), 
+                                         color = as.character(month))) +  
+                            stat_pointinterval(.width = c(0.95),
+                                        # shape = 21,
+                                         interval_size = 0.8, 
+                                         #point_color = , 
+                                         point_size = 0.4, 
+                                         position = position_dodge(width = 0.5)) +
+                            scale_x_discrete(breaks=as.factor(c(1:12)),
+                                        labels=c("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")) + 
+                            facet_grid(cols = vars(factor(pl_math_name, levels = ordinv_math)),
+                                      rows = vars(factor(param_name)), 
+                                      labeller = label_parsed, 
+                                      scales = 'free_y') + 
+                            scale_color_manual(labels = month.abb, values = season_cmap) + 
+                            ylab("Posterior parameter estimate") + 
+                            theme_bw() + 
+                            theme(legend.title = element_blank(),
+                                  #axis.title.x = element_blank(),
+                                  axis.title.y = element_text(size = 8),
+                                  axis.title.x = element_blank(),
+                                  axis.text.x = element_text(size = 7), 
+                                  axis.text.y = element_text(size = 7))
+
+
+ggsave(paste0(figdir, 'plot_post_logst_rain_all.pdf'), 
+       plot.post.logst.rain.all, 
+       width = 190, 
+       height = 80, 
+       units = c('mm'), 
+       dpi = 300)
+
+
+```
+
+
+
+
+
