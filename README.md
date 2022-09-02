@@ -5,7 +5,7 @@
 
 This repository contains notebooks that perform the analysis reported by: 
 
-**Luna, L.V., Korup, O. Landslide Seasonality in the Pacific Northwest.  Submitted to *Geophysical Research Letters*.**
+**Luna, L.V., Korup, O. Seasonal landslide activity lags annual precipitation pattern in the Pacific Northwest.  Submitted to *Geophysical Research Letters*.**
 
 ### 01_LandslideInventoryProcessing.ipynb
 This Python Jupyter Notebook reads in the raw landslide inventory data from each source, subsets it to landslides with a known month, and summarizes the counts of landslides that occurred in each month in each inventory.  It creates Figure 1 and Table S1.  It also clips the PRISM 30-year climate normals and  monthly precipitation data to each inventory footprint and summarizes the data.
